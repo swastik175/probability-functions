@@ -1,1 +1,252 @@
+# Probabilistic Classification Models & ZenML Pipeline Documentation
+
+This repository contains comprehensive theoretical documentation, mathematical formulations, and a production-ready pipeline architecture for three foundational probabilistic classification models: **Gaussian Discriminant Analysis (GDA)**, **Logistic Regression (LRA)**, and **Naive Bayes**. It also includes instructions for productionizing these models using **ZenML**.
+
+---
+
+## 1. Mathematical Formulations & Probabilistic Framework
+
+### Discriminative vs. Generative Paradigms
+*   **Generative Models (GDA, Naive Bayes):** Model the joint probability distribution $P(X, Y) = P(X|Y)P(Y)$. They learn what each class "looks like" structurally to predict the posterior probability $P(Y|X)$ via Bayes' Theorem.
+*   **Discriminative Models (Logistic Regression):** Directly model the posterior probability $P(Y|X)$ or mapping from the feature space $X$ to the class labels $Y$ by optimization of a decision boundary.
+
+---
+
+### A. Gaussian Discriminant Analysis (GDA)
+GDA is a generative model that assumes the input features $X \in \mathbb{R}^n$ given the class label $Y$ follow a multivariate continuous normal (Gaussian) distribution, sharing a common covariance matrix $\Sigma$ across all classes.
+
+#### Mathematical Formulations:
+*   **Class Prior ($\phi$):**
+    $$\phi = P(Y=1) = rac{1}{m} \sum_{i=1}^{m} \mathbb{I}(y^{(i)} = 1)$$
+*   **Class Means ($\mu_0, \mu_1$):**
+    $$\mu_0 = rac{\sum_{i=1}^{m} \mathbb{I}(y^{(i)} = 0) x^{(i)}}{\sum_{i=1}^{m} \mathbb{I}(y^{(i)} = 0)}, \quad \mu_1 = rac{\sum_{i=1}^{m} \mathbb{I}(y^{(i)} = 1) x^{(i)}}{\sum_{i=1}^{m} \mathbb{I}(y^{(i)} = 1)}$$
+*   **Shared Covariance Matrix ($\Sigma$):**
+    $$\Sigma = rac{1}{m} \sum_{i=1}^{m} (x^{(i)} - \mu_{y^{(i)}})(x^{(i)} - \mu_{y^{(i)}})^T$$
+*   **Multivariate Gaussian PDF ($P(X|Y)$):**
+    $$P(X=x|Y=c) = rac{1}{(2\pi)^{n/2} |\Sigma|^{1/2}} \exp\left(-rac{1}{2}(x - \mu_c)^T \Sigma^{-1} (x - \mu_c)
+ight)$$
+*   **Posterior Inference Probability via Bayes' Theorem:**
+    $$P(Y=1|X=x) = rac{P(X=x|Y=1)P(Y=1)}{P(X=x|Y=1)P(Y=1) + P(X=x|Y=0)P(Y=0)}$$
+
+---
+
+### B. Logistic Regression (LRA)
+Logistic Regression is a discriminative model that models the posterior probabilities using a linear combination of features compressed through a non-linear activation mapping function.
+
+#### Mathematical Formulations:
+*   **Linear Combination ($z$):**
+    $$z = w^T x + b = \sum_{j=1}^{n} w_j x_j + b$$
+*   **Sigmoid / Logistic Link Function ($\sigma(z)$):**
+    $$\hat{y} = P(Y=1|X=x) = \sigma(z) = rac{1}{1 + e^{-z}}$$
+*   **Binary Cross-Entropy Loss Function ($J(w, b)$):**
+    $$J(w, b) = -rac{1}{m} \sum_{i=1}^{m} \left[ y^{(i)} \log(\hat{y}^{(i)}) + (1 - y^{(i)}) \log(1 - \hat{y}^{(i)}) 
+ight]$$
+*   **Gradient Vector Formulations (for parameter updating):**
+    $$rac{\partial J}{\partial w} = rac{1}{m} X^T (\hat{Y} - Y), \quad rac{\partial J}{\partial b} = rac{1}{m} \sum_{i=1}^{m} (\hat{y}^{(i)} - y^{(i)})$$
+*   **Iterative Parameter Updates (Gradient Descent):**
+    $$w \leftarrow w -  lpha rac{\partial J}{\partial w}, \quad b \leftarrow b -  lpha rac{\partial J}{\partial b}$$
+
+---
+
+### C. Naive Bayes (Gaussian Variant)
+Naive Bayes is a generative classifier based on Bayes' Theorem with the strong, "naive" assumption of conditional independence among features given the class label $Y$.
+
+#### Mathematical Formulations:
+*   **Conditional Independence Assumption:**
+    $$P(X_1, X_2, \dots, X_n | Y) = \prod_{j=1}^{n} P(X_j | Y)$$
+*   **Feature-Specific Mean ($\mu_{c, j}$) & Variance ($\sigma^2_{c, j}$):**
+    $$\mu_{c, j} = 	ext{mean}(X_j 	ext{ where } Y=c), \quad \sigma^2_{c, j} = 	ext{variance}(X_j 	ext{ where } Y=c)$$
+*   **Univariate Gaussian Likelihood Function:**
+    $$P(X_j = x_j | Y = c) = rac{1}{\sqrt{2\pi\sigma^2_{c, j}}} \exp\left(-rac{(x_j - \mu_{c, j})^2}{2\sigma^2_{c, j}}
+ight)$$
+*   **Posterior Inference Probability Estimation:**
+    $$P(Y=c|X) \propto P(Y=c) \prod_{j=1}^{n} P(X_j = x_j | Y=c)$$
+*   **Log-Transform Numerical Safety Conversion (To prevent underflow):**
+    $$\log P(Y=c|X) \propto \log P(Y=c) + \sum_{j=1}^{n} \log P(X_j = x_j | Y=c)$$
+
+---
+
+## 2. Production Architecture Design via ZenML Pipeline
+
+[ZenML](https://docs.zenml.io/) is an extensible, open-source MLOps framework used to write reproducible Machine Learning pipelines. It decouples infrastructure configuration from your code execution logic using `@step` and `@pipeline` decorators.
+
+### Pipeline Component Layout Block Diagram
+```
+  [data_loader] ----> [data_preprocessor] ----> [model_evaluator]
+                            |
+                            +------> [model_trainer] (GDA, LRA, Naive Bayes)
+```
+
+---
+
+## 3. Modular ZenML Implementation Code
+
+The production pipeline code below defines data ingesting, multi-model parallel training, evaluation, and asset tracking steps.
+
+```python
+import numpy as np
+from typing import Dict, Tuple
+from zenml import step, pipeline, artifact_utils
+
+# =====================================================================
+# MODEL MATHEMATICAL SOURCE IMPLEMENTATIONS (Numpy Matrix Vector Ops)
+# =====================================================================
+
+class GaussianDiscriminantAnalysis:
+    def fit(self, X: np.ndarray, y: np.ndarray):
+        self.phi = np.mean(y)
+        X_0, X_1 = X[y == 0], X[y == 1]
+        self.mu_0, self.mu_1 = np.mean(X_0, axis=0), np.mean(X_1, axis=0)
+        diff_0, diff_1 = X_0 - self.mu_0, X_1 - self.mu_1
+        self.sigma = (np.dot(diff_0.T, diff_0) + np.dot(diff_1.T, diff_1)) / len(y)
+        
+    def _pdf(self, X: np.ndarray, mu: np.ndarray, sigma: np.ndarray) -> np.ndarray:
+        n = len(mu)
+        det = np.linalg.det(sigma)
+        inv = np.linalg.inv(sigma)
+        diff = X - mu
+        exponent = -0.5 * np.sum(np.dot(diff, inv) * diff, axis=1)
+        return (1.0 / (((2 * np.pi) ** (n / 2)) * np.sqrt(det))) * np.exp(exponent)
+
+    def predict_proba(self, X: np.ndarray) -> np.ndarray:
+        p0 = self._pdf(X, self.mu_0, self.sigma) * (1 - self.phi)
+        p1 = self._pdf(X, self.mu_1, self.phi) * self.phi
+        return p1 / (p0 + p1)
+
+class LogisticRegressionModel:
+    def __init__(self, lr: float = 0.05, iterations: int = 1000):
+        self.lr = lr
+        self.iterations = iterations
+        
+    def fit(self, X: np.ndarray, y: np.ndarray):
+        m, n = X.shape
+        self.w, self.b = np.zeros(n), 0.0
+        for _ in range(self.iterations):
+            y_pred = 1 / (1 + np.exp(-(np.dot(X, self.w) + self.b)))
+            dw = (1 / m) * np.dot(X.T, (y_pred - y))
+            db = (1 / m) * np.sum(y_pred - y)
+            self.w -= self.lr * dw
+            self.b -= self.lr * db
+
+    def predict_proba(self, X: np.ndarray) -> np.ndarray:
+        return 1 / (1 + np.exp(-(np.dot(X, self.w) + self.b)))
+
+class GaussianNaiveBayes:
+    def fit(self, X: np.ndarray, y: np.ndarray):
+        self.classes = np.unique(y)
+        self.priors = np.array([np.mean(y == c) for c in self.classes])
+        self.means = np.array([np.mean(X[y == c], axis=0) for c in self.classes])
+        self.vars = np.array([np.var(X[y == c], axis=0) + 1e-9 for c in self.classes])
+
+    def predict_proba(self, X: np.ndarray) -> np.ndarray:
+        probs = []
+        for x in X:
+            class_probs = []
+            for idx, c in enumerate(self.classes):
+                prior = np.log(self.priors[idx])
+                likelihood = -0.5 * np.sum(np.log(2 * np.pi * self.vars[idx])) - 0.5 * np.sum(((x - self.means[idx]) ** 2) / self.vars[idx])
+                class_probs.append(prior + likelihood)
+            exp_probs = np.exp(class_probs - np.max(class_probs))
+            probs.append(exp_probs / np.sum(exp_probs))
+        return np.array(probs)[:, 1]
+
+# =====================================================================
+# ZENML PIPELINE STEPS DEFINITION
+# =====================================================================
+
+@step
+def data_loader() -> Tuple[np.ndarray, np.ndarray]:
+    """Generates clinical target data artifacts."""
+    np.random.seed(42)
+    X_healthy = np.random.multivariate_normal([160, 190], [[100, -10], [-10, 120]], 100)
+    X_disease = np.random.multivariate_normal([135, 260], [[110, -5], [-5, 150]], 100)
+    X = np.vstack((X_healthy, X_disease))
+    y = np.concatenate((np.zeros(100), np.ones(100)))
+    return X, y
+
+@step
+def data_preprocessor(X: np.ndarray, y: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """Performs Train/Test partitioning and feature scaling."""
+    indices = np.arange(X.shape[0])
+    np.random.shuffle(indices)
+    X, y = X[indices], y[indices]
+    
+    split_idx = int(0.8 * len(X))
+    X_train, X_test = X[:split_idx], X[split_idx:]
+    y_train, y_test = y[:split_idx], y[split_idx:]
+    
+    # Feature Standardization mapping
+    mean, std = X_train.mean(axis=0), X_train.std(axis=0)
+    X_train_scaled = (X_train - mean) / std
+    X_test_scaled = (X_test - mean) / std
+    
+    return X_train_scaled, X_test_scaled, y_train, y_test
+
+@step
+def model_trainer(X_train: np.ndarray, y_train: np.ndarray) -> Dict[str, object]:
+    """Trains models across discrete probability algorithms."""
+    gda = GaussianDiscriminantAnalysis()
+    gda.fit(X_train, y_train)
+    
+    lra = LogisticRegressionModel(lr=0.1, iterations=1000)
+    lra.fit(X_train, y_train)
+    
+    nb = GaussianNaiveBayes()
+    nb.fit(X_train, y_train)
+    
+    return {"gda": gda, "lra": lra, "naive_bayes": nb}
+
+@step
+def model_evaluator(models: Dict[str, object], X_test: np.ndarray, y_test: np.ndarray) -> Dict[str, float]:
+    """Computes analytical test matrices across estimators."""
+    results = {}
+    for name, model in models.items():
+        probs = model.predict_proba(X_test)
+        preds = (probs >= 0.5).astype(int)
+        acc = float(np.mean(preds == y_test) * 100)
+        results[name] = acc
+        print(f"Evaluated Model [{name.upper()}] Accuracy: {acc:.2f}%")
+    return results
+
+# =====================================================================
+# ZENML PIPELINE GRAPH DEPLOYMENT
+# =====================================================================
+
+@pipeline
+def probabilistic_classification_pipeline():
+    """Orchestrates steps end-to-end."""
+    X, y = data_loader()
+    X_train, X_test, y_train, y_test = data_preprocessor(X, y)
+    trained_models = model_trainer(X_train, y_train)
+    model_evaluator(trained_models, X_test, y_test)
+
+if __name__ == "__main__":
+    probabilistic_classification_pipeline()
+```
+
+---
+
+## 4. How to Run the Repository
+
+1.  **Clone the Repository:**
+    ```bash
+    git clone https://github.com/yourusername/probabilistic-zenml-pipeline.git
+    cd probabilistic-zenml-pipeline
+    ```
+2.  **Install Required Dependencies:**
+    ```bash
+    pip install numpy zenml
+    ```
+3.  **Initialize ZenML Local Stack:**
+    ```bash
+    zenml init
+    ```
+4.  **Execute the Production Pipeline:**
+    ```bash
+    python run_pipeline.py
+    ```
+5.  **Visualize Pipeline in ZenML Dashboard:**
+    ```bash
+    zenml up
+    ```
 
